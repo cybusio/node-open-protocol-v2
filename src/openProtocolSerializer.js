@@ -1,8 +1,5 @@
 //@ts-check
 /*
-  Dynamic Serializer with Vendor-Specific Logic
-  Supports: AtlasCopco, Bosch, Desoutter
-  Copyright: (c) 2024 Diwaker Jha
   Copyright: (c) 2023 Alejandro de la Mata Chico
   Copyright: (c) 2018-2020, Smart-Tech Controle e Automação
   GNU General Public License v3.0+ (see LICENSE or https://www.gnu.org/licenses/gpl-3.0.txt)
@@ -33,156 +30,200 @@ var debug = util.debuglog("open-protocol");
  * @param {number} Header.messageNumber Linking function, can be 1- 9 at message length > 9999.
  * @param {buffer | string} Header.payload the user's data
  */
+
 class OpenProtocolSerializer extends Transform {
   /**
    * @class OpenProtocolSerializer
    * @description This class performs the serialization of the MID header.
-   * This transforms MID (object) into MID (Buffer) with vendor-specific logic.
-   * @param {Object} opts Options passed to the constructor
-   * @param {string} opts.vendor The vendor name (e.g., "AtlasCopco", "Bosch", "Desoutter")
+   * This transforms MID (object) in MID (Buffer).
+   * @param {Object} opts an object with the option passed to the constructor
    */
   constructor(opts) {
     opts = opts || {};
     opts.writableObjectMode = true;
     super(opts);
-
-    this.vendor = opts.vendor || "AtlasCopco"; // Default vendor
-    debug("OpenProtocolSerializer initialized for vendor:", this.vendor);
+    debug("new openProtocolSerializer");
   }
 
   _transform(chunk, encoding, cb) {
     debug("openProtocolSerializer _transform", chunk);
 
-    try {
-      chunk.mid = Number(chunk.mid);
-      if (isNaN(chunk.mid) || chunk.mid < 1 || chunk.mid > 9999) {
-        throw new Error(`Invalid MID [${chunk.mid}]`);
-      }
+    chunk.mid = Number(chunk.mid);
 
-      if (!chunk.revision || chunk.revision === "   ") {
-        chunk.revision = 1;
-      }
-      chunk.revision = Number(chunk.revision);
-      if (isNaN(chunk.revision) || chunk.revision < 0 || chunk.revision > 999) {
-        throw new Error(`Invalid revision [${chunk.revision}]`);
-      }
-
-      if (
-        this.vendor.toLowerCase() === "boscth" ||
-        this.vendor.toLowerCase() === "desoutter"
-      ) {
-        this._serializeForBoschDesoutter(chunk, cb);
-      } else if (this.vendor.toLowerCase() === "atlascopco") {
-        this._serializeForAtlasCopco(chunk, cb);
-      } else {
-        throw new Error(`Unsupported vendor: ${this.vendor}`);
-      }
-    } catch (error) {
-      debug("openProtocolSerializer _transform error:", error);
-      cb(error);
+    if (isNaN(chunk.mid) || chunk.mid < 1 || chunk.mid > 9999) {
+      cb(new Error(`Invalid MID [${chunk.mid}]`));
+      debug("openProtocolSerializer _transform err-mid:", chunk);
+      return;
     }
-  }
 
-  _serializeForBoschDesoutter(chunk, cb) {
-    debug(
-      `Vendor: ${this.vendor}, applying Bosch/Desoutter-specific serialization`
-    );
-
-    let sizePayload = chunk.payload ? chunk.payload.length : 0;
-    let sizeMessage = 16 + sizePayload;
-    let buf = Buffer.alloc(sizeMessage);
-
-    buf.write(pad(sizeMessage - 1, 4), 0, 4, encodingOP); // Message length
-    buf.write(pad(chunk.mid, 4), 4, 4, encodingOP); // MID
-    buf.write("            ", 8, encodingOP); // Simplified header for Bosch/Desoutter
-    if (chunk.payload) {
-      buf.write(chunk.payload.toString(encodingOP), 16, encodingOP); // Payload
+    if (
+      chunk.revision === "   " ||
+      chunk.revision === 0 ||
+      chunk.revision === undefined
+    ) {
+      chunk.revision = 1;
     }
-    buf.write("\u0000", sizeMessage - 1, encodingOP); // Null terminator
 
-    debug("Bosch/Desoutter serialization result:", buf);
-    this.push(buf);
-    cb();
-  }
+    chunk.revision = Number(chunk.revision);
 
-  _serializeForAtlasCopco(chunk, cb) {
-    debug("Vendor: AtlasCopco, applying full serialization logic");
+    if (isNaN(chunk.revision) || chunk.revision < 0 || chunk.revision > 999) {
+      cb(new Error(`Invalid revision [${chunk.revision}]`));
+      debug("openProtocolSerializer _transform err-revision:", chunk);
+      return;
+    }
 
-    // Normalize and validate fields
-    chunk.stationID = this._normalizeField(
-      chunk.stationID,
-      1,
-      0,
-      99,
-      "stationID"
-    );
-    chunk.spindleID = this._normalizeField(
-      chunk.spindleID,
-      1,
-      0,
-      99,
-      "spindleID"
-    );
-    chunk.sequenceNumber = this._normalizeField(
-      chunk.sequenceNumber,
-      0,
-      0,
-      99,
-      "sequenceNumber"
-    );
-    chunk.messageParts = this._normalizeField(
-      chunk.messageParts,
-      0,
-      0,
-      9,
-      "messageParts"
-    );
-    chunk.messageNumber = this._normalizeField(
-      chunk.messageNumber,
-      0,
-      0,
-      9,
-      "messageNumber"
-    );
+    if (chunk.stationID === "  ") {
+      chunk.stationID = 1;
+      chunk.spindleID = Number(chunk.stationID);
+    } else if (chunk.stationID === undefined) {
+      chunk.stationID = "\n" + "\n";
+    } else {
+      chunk.stationID = Number(chunk.stationID);
+    }
 
-    if (!chunk.payload) {
+    if (isNaN(chunk.stationID) || chunk.stationID < 0 || chunk.stationID > 99) {
+      cb(new Error(`Invalid stationID [${chunk.stationID}]`));
+      debug("openProtocolSerializer _transform err-stationID:", chunk);
+      return;
+    }
+
+    if (chunk.spindleID === "  ") {
+      chunk.spindleID = 1;
+      chunk.spindleID = Number(chunk.spindleID);
+    } else if (chunk.spindleID === undefined) {
+      chunk.spindleID = "\n" + "\n";
+    } else {
+      chunk.spindleID = Number(chunk.spindleID);
+    }
+
+    if (isNaN(chunk.spindleID) || chunk.spindleID < 0 || chunk.spindleID > 99) {
+      cb(new Error(`Invalid spindleID [${chunk.spindleID}]`));
+      debug("openProtocolSerializer _transform err-spindleID:", chunk);
+      return;
+    }
+
+    if (chunk.sequenceNumber === "  " || chunk.sequenceNumber === undefined) {
+      chunk.sequenceNumber = 0;
+    }
+
+    chunk.sequenceNumber = Number(chunk.sequenceNumber);
+
+    if (
+      isNaN(chunk.sequenceNumber) ||
+      chunk.sequenceNumber < 0 ||
+      chunk.sequenceNumber > 99
+    ) {
+      cb(new Error(`Invalid sequenceNumber [${chunk.sequenceNumber}]`));
+      debug("openProtocolSerializer _transform err-sequenceNumber:", chunk);
+      return;
+    }
+
+    if (chunk.messageParts === " ") {
+      chunk.messageParts = 0;
+      chunk.messageParts = Number(chunk.messageParts);
+    } else if (chunk.messageParts === undefined) {
+      chunk.messageParts = "\n";
+    } else {
+      chunk.messageParts = Number(chunk.messageParts);
+    }
+
+    if (
+      isNaN(chunk.messageParts) ||
+      chunk.messageParts < 0 ||
+      chunk.messageParts > 9
+    ) {
+      cb(new Error(`Invalid messageParts [${chunk.messageParts}]`));
+      debug("openProtocolSerializer _transform err-messageParts:", chunk);
+      return;
+    }
+
+    if (chunk.messageNumber === " ") {
+      chunk.messageNumber = 0;
+      chunk.messageNumber = Number(chunk.messageNumber);
+    } else if (chunk.messageNumber === undefined) {
+      chunk.messageNumber = "\n";
+    } else {
+      chunk.messageNumber = Number(chunk.messageNumber);
+    }
+
+    if (
+      isNaN(chunk.messageNumber) ||
+      chunk.messageNumber < 0 ||
+      chunk.messageNumber > 9
+    ) {
+      cb(new Error(`Invalid messageNumber [${chunk.messageNumber}]`));
+      debug("openProtocolSerializer _transform err-messageNumber:", chunk);
+      return;
+    }
+
+    if (chunk.payload === undefined) {
       chunk.payload = "";
     }
 
+    if (!Buffer.isBuffer(chunk.payload) && typeof chunk.payload !== "string") {
+      cb(new Error(`Invalid payload [${chunk.payload}]`));
+      debug("openProtocolSerializer _transform err-payload:", chunk);
+      return;
+    }
+
+    // Dynamically select serialization logic based on vendor
+    const normalizedVendor = this.vendor.toLowerCase();
+    if (normalizedVendor === "bosch" || normalizedVendor === "desoutter") {
+      this._serializeForBoschDesoutter(chunk, cb);
+    } else if (normalizedVendor === "atlascopco") {
+      this._serializeForAtlasCopco(chunk, cb);
+    } else {
+      throw new Error(`Unsupported vendor: ${this.vendor}`);
+    }
+  }
+  catch(error) {
+    debug("openProtocolSerializer _transform error:", error);
+    cb(error);
+  }
+
+  _serializeForBoschDesoutter(chunk, cb) {
     let sizePayload = chunk.payload.length;
     let sizeMessage = 21 + sizePayload;
     let buf = Buffer.alloc(sizeMessage);
 
-    buf.write(pad(sizeMessage - 1, 4), 0, 4, encodingOP); // Message length
-    buf.write(pad(chunk.mid, 4), 4, 4, encodingOP); // MID
-    buf.write(pad(chunk.revision, 3), 8, encodingOP); // Revision
-    buf.write(chunk.noAck ? "1" : "0", 11, encodingOP); // No Ack
-    buf.write(pad(chunk.stationID, 2), 12, encodingOP); // Station ID
-    buf.write(pad(chunk.spindleID, 2), 14, encodingOP); // Spindle ID
-    buf.write(pad(chunk.sequenceNumber, 2), 16, encodingOP); // Sequence Number
-    buf.write(pad(chunk.messageParts, 1), 18, encodingOP); // Message Parts
-    buf.write(pad(chunk.messageNumber, 1), 19, encodingOP); // Message Number
-    buf.write(chunk.payload.toString(encodingOP), 20, encodingOP); // Payload
-    buf.write("\u0000", sizeMessage - 1, encodingOP); // Null terminator
+    buf.write(pad(sizeMessage - 1, 4), 0, 4, encodingOP);
+    buf.write(pad(chunk.mid, 4), 4, 4, encodingOP);
 
-    debug("AtlasCopco serialization result:", buf);
+    buf.write("            ", 8, encodingOP);
+    buf.write(chunk.payload.toString(encodingOP), 20, encodingOP);
+    buf.write("\u0000", sizeMessage, encodingOP);
+
+    debug("Bosch/Desoutter serialization result:", buf);
     this.push(buf);
+
     cb();
   }
 
-  _normalizeField(field, defaultValue, min, max, fieldName) {
-    if (field === undefined || field === " " || field === "  ") {
-      return defaultValue;
-    }
-    field = Number(field);
-    if (isNaN(field) || field < min || field > max) {
-      throw new Error(`Invalid ${fieldName} [${field}]`);
-    }
-    return field;
+  _serializeForAtlasCopco(chunk, cb) {
+    let sizePayload = chunk.payload.length;
+    let sizeMessage = 21 + sizePayload;
+    let buf = Buffer.alloc(sizeMessage);
+
+    buf.write(pad(sizeMessage - 1, 4), 0, 4, encodingOP);
+    buf.write(pad(chunk.mid, 4), 4, 4, encodingOP);
+    buf.write(pad(chunk.revision, 3), 8, encodingOP);
+    buf.write(chunk.noAck ? "1" : "0", 11, encodingOP);
+    buf.write(pad(chunk.stationID, 2), 12, encodingOP);
+    buf.write(pad(chunk.spindleID, 2), 14, encodingOP);
+    buf.write(pad(chunk.sequenceNumber, 2), 16, encodingOP);
+    buf.write(pad(chunk.messageParts, 1), 18, encodingOP);
+    buf.write(pad(chunk.messageNumber, 1), 19, encodingOP);
+    buf.write(chunk.payload.toString(encodingOP), 20, encodingOP);
+    buf.write("\u0000", sizeMessage, encodingOP);
+
+    debug("AtlasCopco serialization result:", buf);
+    this.push(buf);
+
+    cb();
   }
 
   _destroy() {
-    // No-op, needed to handle older Node.js versions
+    //no-op, needed to handle older node versions
   }
 }
 
