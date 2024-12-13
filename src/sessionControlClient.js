@@ -187,8 +187,10 @@ class SessionControlClient extends EventEmitter {
       retryTimes: opts.retryTimes,
       rawData: opts.rawData,
       disableMidParsing: opts.disableMidParsing,
-      vendor: opts.vendor, // Pass vendor to LinkLayer
+      vendor: opts.vendor, // Ensure vendor is passed here
     });
+
+    debug("SessionControlClient initialized with vendor:", opts.vendor);
 
     this.ll.on("error", (err) => this._onErrorLinkLayer(err));
 

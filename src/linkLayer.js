@@ -54,6 +54,9 @@ class LinkLayer extends Duplex {
     this.opSerializer = new OpenProtocolSerializer({
       vendor: opts.vendor || "AtlasCopco", // Pass vendor to serializer
     });
+
+    debug("LinkLayer initialized with vendor:", opts.vendor);
+
     this.midParser = new MIDParser();
     this.midSerializer = new MIDSerializer();
     //Create instances of manipulators

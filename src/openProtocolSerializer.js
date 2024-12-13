@@ -45,8 +45,9 @@ class OpenProtocolSerializer extends Transform {
     opts = opts || {};
     opts.writableObjectMode = true;
     super(opts);
-    debug("new openProtocolSerializer");
-    this.vendor = opts.vendor || "AtlasCopco"; // Default vendor is AtlasCopco
+
+    this.vendor = opts.vendor || "AtlasCopco"; // Default vendor
+    debug("OpenProtocolSerializer initialized for vendor:", this.vendor);
   }
 
   _transform(chunk, encoding, cb) {

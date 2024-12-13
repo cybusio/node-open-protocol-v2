@@ -17,7 +17,6 @@ const midCommand = require("./src/midCommand.json");
 const midrequest = require("./src/midRequest.json");
 
 const net = require("net");
-
 function createClient(port, host, opts, connectionListener) {
   if (connectionListener === undefined) {
     if (typeof opts === "function") {
@@ -29,14 +28,14 @@ function createClient(port, host, opts, connectionListener) {
   }
 
   opts = opts || {};
+  opts.vendor = opts.vendor || "AtlasCopco"; // Default vendor
 
   let socket = net.createConnection(port, host, () => {
     socket.setTimeout(0);
     client.connect(connectionListener);
   });
-  opts.vendor = opts.vendor || "AtlasCopco"; // Default vendor if not provided
-  socket.setTimeout(20000);
 
+  socket.setTimeout(20000);
   socket.once("timeout", () => onTimeout());
 
   function onTimeout() {
@@ -50,7 +49,6 @@ function createClient(port, host, opts, connectionListener) {
   opts.stream = socket;
 
   let client = new SessionControlClient(opts);
-
   return client;
 }
 
