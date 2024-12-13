@@ -37,12 +37,14 @@ class OpenProtocolSerializer extends Transform {
    * @description This class performs the serialization of the MID header.
    * This transforms MID (object) in MID (Buffer).
    * @param {Object} opts an object with the option passed to the constructor
+   * @param {string} opts.vendor The vendor name (e.g., "AtlasCopco", "Bosch", "Desoutter")
    */
   constructor(opts) {
     opts = opts || {};
     opts.writableObjectMode = true;
     super(opts);
-    debug("new openProtocolSerializer");
+    this.vendor = opts.vendor || "AtlasCopco"; // Default vendor
+    debug("OpenProtocolSerializer initialized for vendor:", this.vendor);
   }
 
   _transform(chunk, encoding, cb) {
