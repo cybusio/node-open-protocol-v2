@@ -26,7 +26,7 @@ var debug = util.debuglog("open-protocol");
  * @param {number} Header.mid The MID describes how to interpret the message.
  * @param {number} Header.revision The MID Revision is unique per MID and is used in case different versions are available for the same MID.
  * @param {boolean} Header.noAck The No Ack Flag is used when setting a subscription.
- * @param {number} Header.stationID The station the message is addressed to in the case of controller with multi-station configuration.
+ * @param {number} Header.stationID The station the message is addressed to in the case of a controller with multi-station configuration.
  * @param {number} Header.spindleID The spindle the message is addressed to in the case several spindles are connected to the same controller.
  * @param {number} Header.sequenceNumber For acknowledging on “Link Level” with MIDs 0997 and 0998.
  * @param {number} Header.messageParts Linking function can be up to 9 = possible to send 9*9999 bytes messages. ~ 90 kB.
@@ -74,9 +74,15 @@ class OpenProtocolSerializer extends Transform {
         this.vendor.toLowerCase() === "desoutter" ||
         this.vendor.toLowerCase() === "bosch"
       ) {
-        this._serializeForDesoutterOrBosch(chunk, cb);
+        debug(
+          `Vendor: ${this.vendor}, applying Desoutter/Bosch-specific serialization`
+        );
+        this.push(this._serializeForDesoutterOrBosch(chunk));
       } else if (this.vendor.toLowerCase() === "atlascopco") {
-        this._serializeForAtlasCopco(chunk, cb);
+        debug(
+          `Vendor: ${this.vendor}, applying AtlasCopco-specific serialization`
+        );
+        this.push(this._serializeForAtlasCopco(chunk));
       } else {
         throw new Error(`Unsupported vendor: ${this.vendor}`);
       }
@@ -84,12 +90,12 @@ class OpenProtocolSerializer extends Transform {
       debug("openProtocolSerializer _transform error:", error);
       cb(error);
     }
+
+    cb();
   }
 
-  _serializeForDesoutterOrBosch(chunk, cb) {
-    debug(
-      `Vendor: ${this.vendor}, applying Desoutter/Bosch-specific serialization`
-    );
+  _serializeForDesoutterOrBosch(chunk) {
+    debug(`Serializing for Desoutter/Bosch:`, chunk);
 
     let sizePayload = chunk.payload ? chunk.payload.length : 0;
     let sizeMessage = 16 + sizePayload;
@@ -98,22 +104,19 @@ class OpenProtocolSerializer extends Transform {
     buf.write(pad(sizeMessage - 1, 4), 0, 4, encodingOP); // Message length
     buf.write(pad(chunk.mid, 4), 4, 4, encodingOP); // MID
     buf.write("            ", 8, encodingOP); // Simplified header for Desoutter/Bosch
-    buf.write(
-      chunk.payload ? chunk.payload.toString(encodingOP) : "",
-      20,
-      encodingOP
-    ); // Payload
-    buf.write("\u0000", sizeMessage, encodingOP); // Null terminator
+    if (chunk.payload) {
+      buf.write(chunk.payload.toString(encodingOP), 16, encodingOP); // Payload
+    }
+    buf.write("\u0000", sizeMessage - 1, encodingOP); // Null terminator
 
     debug("Desoutter/Bosch serialization result:", buf);
-    this.push(buf);
-    cb();
+    return buf;
   }
 
-  _serializeForAtlasCopco(chunk, cb) {
-    debug("Vendor: AtlasCopco, applying full serialization logic");
+  _serializeForAtlasCopco(chunk) {
+    debug("Serializing for AtlasCopco:", chunk);
 
-    // Normalize stationID and spindleID
+    // Normalize fields
     chunk.stationID = this._normalizeField(
       chunk.stationID,
       1,
@@ -168,11 +171,10 @@ class OpenProtocolSerializer extends Transform {
     buf.write(pad(chunk.messageParts, 1), 18, encodingOP); // Message Parts
     buf.write(pad(chunk.messageNumber, 1), 19, encodingOP); // Message Number
     buf.write(chunk.payload.toString(encodingOP), 20, encodingOP); // Payload
-    buf.write("\u0000", sizeMessage, encodingOP); // Null terminator
+    buf.write("\u0000", sizeMessage - 1, encodingOP); // Null terminator
 
     debug("AtlasCopco serialization result:", buf);
-    this.push(buf);
-    cb();
+    return buf;
   }
 
   _normalizeField(field, defaultValue, min, max, fieldName) {
